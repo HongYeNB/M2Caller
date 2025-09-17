@@ -3,4 +3,5 @@ numpy
 tqdm
 h5py
 edlib
-mamba
+mamba-ssm
+causal-conv1d
