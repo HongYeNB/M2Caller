@@ -24,7 +24,6 @@ class Mamba2LikeBlock(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.ssm_dim = ssm_dim
-        # project input to SSM space
         self.in_proj = nn.Linear(d_model, ssm_dim)
         self.A = nn.Parameter(torch.randn(ssm_dim) * -0.01)  # stable (negative)
         self.B = nn.Linear(d_model, ssm_dim, bias=False)
@@ -35,9 +34,7 @@ class Mamba2LikeBlock(nn.Module):
     def forward(self, x):  # x: [B, L, C]
         B, L, C = x.shape
         xn = self.norm(x)
-        # depthwise conv mixing (channel-wise)
         xc = self.dw_conv(xn.transpose(1,2)).transpose(1,2)  # [B, L, C]
-        # selective scan
         u = self.in_proj(xc)  # [B, L, S]
         h = torch.zeros(B, self.ssm_dim, device=x.device, dtype=x.dtype)
         outs = []
@@ -47,7 +44,6 @@ class Mamba2LikeBlock(nn.Module):
             y = self.C(h)
             outs.append(y)
         y = torch.stack(outs, dim=1)  # [B, L, C]
-        # gated residual
         g = torch.sigmoid(self.gate(xn))
         return x + g * y
 
@@ -61,7 +57,6 @@ class M2CallerModel(nn.Module):
         self.out = nn.Linear(d_model, vocab_size)
 
     def forward(self, signal, signal_lengths):
-        # signal: [B, W, 1] or [B, 1, W]
         if signal.dim() == 3 and signal.shape[1] != 1:
             signal = signal.transpose(1,2)  # [B, 1, W]
         feat = self.sampler(signal)  # [B, C, L']
@@ -73,7 +68,6 @@ class M2CallerModel(nn.Module):
             x = blk(x)
         x = self.norm(x)
         logits = self.out(x)  # [B, L', V]
-        # CTC expects [T, B, C], plus output lengths
         log_probs = logits.log_softmax(-1).transpose(0,1).contiguous()
         lengths = torch.full((B,), log_probs.shape[0], dtype=torch.int32, device=log_probs.device)
         return log_probs, lengths
